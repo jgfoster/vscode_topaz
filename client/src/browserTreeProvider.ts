@@ -203,6 +203,11 @@ function toTreeItem(node: BrowserNode): vscode.TreeItem {
       item.iconPath = new vscode.ThemeIcon('symbol-variable');
       item.contextValue = 'gemstoneGlobal';
       item.tooltip = `${node.dictName} → ${node.name}`;
+      item.command = {
+        command: 'gemstone.inspectGlobal',
+        title: 'Inspect',
+        arguments: [node],
+      };
       return item;
     }
   }

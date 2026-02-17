@@ -15,6 +15,7 @@ import { CodeExecutor } from './codeExecutor';
 import { BrowserTreeProvider, BrowserNode } from './browserTreeProvider';
 import { GemStoneFileSystemProvider } from './gemstoneFileSystemProvider';
 import { GemStoneDebugSession } from './gemstoneDebugSession';
+import { InspectorTreeProvider, InspectorNode } from './inspectorTreeProvider';
 import * as queries from './browserQueries';
 
 let client: LanguageClient;
@@ -94,6 +95,15 @@ export function activate(context: vscode.ExtensionContext) {
     showCollapseAll: true,
   });
   context.subscriptions.push(browserTreeView);
+
+  // ── Object Inspector ──────────────────────────────────────
+  const inspectorProvider = new InspectorTreeProvider(sessionManager);
+
+  const inspectorView = vscode.window.createTreeView('gemstoneInspector', {
+    treeDataProvider: inspectorProvider,
+    showCollapseAll: true,
+  });
+  context.subscriptions.push(inspectorView);
 
   // ── GemStone FileSystem Provider ─────────────────────────
   const gemstoneFs = new GemStoneFileSystemProvider(sessionManager);
@@ -295,6 +305,7 @@ export function activate(context: vscode.ExtensionContext) {
       const { id } = item.activeSession;
       sessionManager.logout(id);
       sessionTreeProvider.refresh();
+      inspectorProvider.removeSessionItems(id);
       vscode.window.showInformationMessage(`Session ${id}: Logged out.`);
     }),
 
@@ -546,6 +557,25 @@ export function activate(context: vscode.ExtensionContext) {
 
     vscode.commands.registerCommand('gemstone.executeIt', () => {
       codeExecutor.executeIt();
+    }),
+
+    vscode.commands.registerCommand('gemstone.inspectIt', () => {
+      codeExecutor.inspectIt(inspectorProvider);
+    }),
+
+    vscode.commands.registerCommand('gemstone.inspectGlobal', async (node?: BrowserNode) => {
+      if (!node || node.kind !== 'global') return;
+      const code =
+        `(System myUserProfile symbolList at: ${node.dictIndex}) at: #'${node.name}'`;
+      await codeExecutor.inspectExpression(inspectorProvider, code, node.name);
+    }),
+
+    vscode.commands.registerCommand('gemstone.removeInspectorItem', (node?: InspectorNode) => {
+      if (node) inspectorProvider.removeRoot(node);
+    }),
+
+    vscode.commands.registerCommand('gemstone.clearInspector', () => {
+      inspectorProvider.clearAll();
     }),
   );
 }

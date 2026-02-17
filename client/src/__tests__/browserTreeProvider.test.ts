@@ -396,7 +396,10 @@ describe('BrowserTreeProvider', () => {
       expect(item.collapsibleState).toBe(TreeItemCollapsibleState.None);
       expect((item.iconPath as ThemeIcon).id).toBe('symbol-variable');
       expect(item.contextValue).toBe('gemstoneGlobal');
-      expect(item.command).toBeUndefined();
+      expect(item.command).toMatchObject({
+        command: 'gemstone.inspectGlobal',
+        arguments: [node],
+      });
     });
   });
 

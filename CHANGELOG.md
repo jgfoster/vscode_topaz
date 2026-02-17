@@ -11,6 +11,7 @@ All notable changes to the **GemStone Smalltalk** extension will be documented i
 - **`** ALL **` method category** — each side node includes a synthetic `** ALL **` category that lists every method alphabetically, making it easy to find methods without knowing their category
 - **Index-based dictionary lookup** — class resolution now uses the SymbolList index rather than name lookup, avoiding ambiguity when the same class name exists in multiple dictionaries
 - **Bulk environment query** — single-round-trip `_unifiedCategorys:` query fetches all categories and selectors per environment, reducing GCI calls for remote databases
+- **Object Inspector** — new sidebar tree view for inspecting GemStone objects with drill-down into named instance variables and indexed elements; pin objects via **Inspect It** (Cmd+I) or by clicking globals in the browser; reuses debugger's GCI introspection infrastructure
 
 ## [1.0.3] - 2026-02-16
 

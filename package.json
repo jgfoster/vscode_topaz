@@ -232,6 +232,11 @@
           "id": "gemstoneBrowser",
           "name": "Browser",
           "type": "tree"
+        },
+        {
+          "id": "gemstoneInspector",
+          "name": "Inspector",
+          "type": "tree"
         }
       ]
     },
@@ -239,6 +244,10 @@
       {
         "view": "gemstoneBrowser",
         "contents": "No GemStone session selected.\n[Select a session](command:gemstone.selectSession) to browse classes and methods."
+      },
+      {
+        "view": "gemstoneInspector",
+        "contents": "No objects inspected yet.\nSelect code and press Cmd+I to inspect."
       }
     ],
     "commands": [
@@ -307,6 +316,29 @@
         "title": "Execute It",
         "category": "GemStone",
         "icon": "$(run)"
+      },
+      {
+        "command": "gemstone.inspectIt",
+        "title": "Inspect It",
+        "category": "GemStone",
+        "icon": "$(eye)"
+      },
+      {
+        "command": "gemstone.inspectGlobal",
+        "title": "Inspect",
+        "category": "GemStone"
+      },
+      {
+        "command": "gemstone.removeInspectorItem",
+        "title": "Remove",
+        "category": "GemStone",
+        "icon": "$(close)"
+      },
+      {
+        "command": "gemstone.clearInspector",
+        "title": "Clear All",
+        "category": "GemStone",
+        "icon": "$(clear-all)"
       },
       {
         "command": "gemstone.refreshBrowser",
@@ -387,6 +419,11 @@
         {
           "command": "gemstone.refreshBrowser",
           "when": "view == gemstoneBrowser",
+          "group": "navigation"
+        },
+        {
+          "command": "gemstone.clearInspector",
+          "when": "view == gemstoneInspector",
           "group": "navigation"
         }
       ],
@@ -504,6 +541,15 @@
           "command": "gemstone.selectSession",
           "when": "view == gemstoneSessions && viewItem == gemstoneSession",
           "group": "inline@4"
+        },
+        {
+          "command": "gemstone.removeInspectorItem",
+          "when": "view == gemstoneInspector && viewItem == gemstoneInspectorRoot",
+          "group": "inline@1"
+        },
+        {
+          "command": "gemstone.inspectGlobal",
+          "when": "view == gemstoneBrowser && viewItem == gemstoneGlobal"
         }
       ],
       "editor/context": [
@@ -513,9 +559,14 @@
           "group": "1_modification@0"
         },
         {
-          "command": "gemstone.executeIt",
+          "command": "gemstone.inspectIt",
           "when": "editorTextFocus && gemstone.hasActiveSession",
           "group": "1_modification@1"
+        },
+        {
+          "command": "gemstone.executeIt",
+          "when": "editorTextFocus && gemstone.hasActiveSession",
+          "group": "1_modification@2"
         }
       ]
     },
@@ -563,6 +614,12 @@
         "command": "gemstone.executeIt",
         "key": "ctrl+e",
         "mac": "cmd+e",
+        "when": "editorTextFocus && gemstone.hasActiveSession"
+      },
+      {
+        "command": "gemstone.inspectIt",
+        "key": "ctrl+i",
+        "mac": "cmd+i",
         "when": "editorTextFocus && gemstone.hasActiveSession"
       }
     ]
