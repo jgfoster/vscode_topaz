@@ -18,6 +18,7 @@ interface ParsedMethodUri {
   isMeta: boolean;
   category: string;
   selector: string;
+  environmentId: number;
 }
 
 interface ParsedDefinitionUri {
@@ -47,6 +48,7 @@ interface ParsedNewMethodUri {
   className: string;
   isMeta: boolean;
   category: string;
+  environmentId: number;
 }
 
 type ParsedUri = ParsedMethodUri | ParsedDefinitionUri | ParsedCommentUri | ParsedNewClassUri | ParsedNewMethodUri;
@@ -55,6 +57,10 @@ function parseUri(uri: vscode.Uri): ParsedUri {
   const sessionId = parseInt(uri.authority, 10);
   const parts = uri.path.split('/').map(decodeURIComponent);
   // parts[0] is '' (leading /)
+
+  // Parse optional ?env=N from query string
+  const envMatch = uri.query?.match(/env=(\d+)/);
+  const environmentId = envMatch ? parseInt(envMatch[1], 10) : 0;
 
   if (parts.length === 3 && parts[2] === 'new-class') {
     return { kind: 'new-class', sessionId, dictName: parts[1] };
@@ -73,6 +79,7 @@ function parseUri(uri: vscode.Uri): ParsedUri {
       className: parts[2],
       isMeta: parts[3] === 'class',
       category: parts[4],
+      environmentId,
     };
   }
   if (parts.length === 6) {
@@ -84,6 +91,7 @@ function parseUri(uri: vscode.Uri): ParsedUri {
       isMeta: parts[3] === 'class',
       category: parts[4],
       selector: parts[5],
+      environmentId,
     };
   }
   throw vscode.FileSystemError.FileNotFound(uri);
@@ -143,7 +151,7 @@ export class GemStoneFileSystemProvider implements vscode.FileSystemProvider {
     let text: string;
     switch (parsed.kind) {
       case 'method':
-        text = queries.getMethodSource(session, parsed.className, parsed.isMeta, parsed.selector);
+        text = queries.getMethodSource(session, parsed.className, parsed.isMeta, parsed.selector, parsed.environmentId);
         break;
       case 'definition':
         text = queries.getClassDefinition(session, parsed.className);
@@ -169,7 +177,7 @@ export class GemStoneFileSystemProvider implements vscode.FileSystemProvider {
       switch (parsed.kind) {
         case 'method':
           queries.compileMethod(
-            session, parsed.className, parsed.isMeta, parsed.category, source,
+            session, parsed.className, parsed.isMeta, parsed.category, source, parsed.environmentId,
           );
           vscode.window.showInformationMessage(
             `Compiled ${parsed.className}${parsed.isMeta ? ' class' : ''}>>#${parsed.selector}`
@@ -193,7 +201,7 @@ export class GemStoneFileSystemProvider implements vscode.FileSystemProvider {
           break;
         case 'new-method':
           queries.compileMethod(
-            session, parsed.className, parsed.isMeta, parsed.category, source,
+            session, parsed.className, parsed.isMeta, parsed.category, source, parsed.environmentId,
           );
           vscode.window.showInformationMessage(
             `Compiled new method in ${parsed.className}${parsed.isMeta ? ' class' : ''}`

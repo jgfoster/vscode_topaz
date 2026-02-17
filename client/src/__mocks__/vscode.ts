@@ -190,9 +190,9 @@ export class Uri {
   }
 
   static parse(value: string): Uri {
-    const match = value.match(/^([^:]+):\/\/([^/]*)(.*)$/);
+    const match = value.match(/^([^:]+):\/\/([^/]*)([^?#]*)(?:\?([^#]*))?(?:#(.*))?$/);
     if (match) {
-      return new Uri(match[1], match[2], match[3]);
+      return new Uri(match[1], match[2], match[3], match[4] || '', match[5] || '');
     }
     return new Uri('file', '', value);
   }

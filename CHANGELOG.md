@@ -4,6 +4,14 @@ All notable changes to the **GemStone Smalltalk** extension will be documented i
 
 ## [Unreleased]
 
+### Added
+
+- **Multi-environment method dictionaries** — new `gemstone.maxEnvironment` setting controls how many method environments are displayed (default 0 shows standard Smalltalk only; higher values show additional environments, e.g., Python)
+- **Class categories in browser** — dictionaries now group classes by category with a `** ALL **` synthetic category listing every class and `** OTHER GLOBALS **` for non-class dictionary entries (shown with `symbol-variable` icon)
+- **`** ALL **` method category** — each side node includes a synthetic `** ALL **` category that lists every method alphabetically, making it easy to find methods without knowing their category
+- **Index-based dictionary lookup** — class resolution now uses the SymbolList index rather than name lookup, avoiding ambiguity when the same class name exists in multiple dictionaries
+- **Bulk environment query** — single-round-trip `_unifiedCategorys:` query fetches all categories and selectors per environment, reducing GCI calls for remote databases
+
 ## [1.0.3] - 2026-02-16
 
 ### Added

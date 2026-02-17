@@ -84,6 +84,12 @@
               "type": "string"
             }
           },
+          "gemstone.maxEnvironment": {
+            "type": "integer",
+            "default": 0,
+            "minimum": 0,
+            "description": "Maximum method dictionary environment to show in the browser (0 = standard Smalltalk only, 2 = show environments 0–2)"
+          },
           "gemstone.logins": {
             "type": "array",
             "default": [],

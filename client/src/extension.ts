@@ -70,6 +70,9 @@ export function activate(context: vscode.ExtensionContext) {
       if (e.affectsConfiguration('gemstone.logins')) {
         treeProvider.refresh();
       }
+      if (e.affectsConfiguration('gemstone.maxEnvironment')) {
+        browserTreeProvider.refresh();
+      }
     })
   );
 
@@ -314,7 +317,9 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.window.showErrorMessage('No active GemStone session.');
         return;
       }
-      const dictName = node && node.kind === 'dictionary' ? node.name : 'UserGlobals';
+      let dictName = 'UserGlobals';
+      if (node && node.kind === 'dictionary') dictName = node.name;
+      else if (node && node.kind === 'classCategory') dictName = node.dictName;
       const uri = vscode.Uri.parse(
         `gemstone://${session.id}/${encodeURIComponent(dictName)}/new-class`
       );
@@ -332,16 +337,19 @@ export function activate(context: vscode.ExtensionContext) {
       let className: string;
       let isMeta: boolean;
       let category: string;
+      let environmentId = 0;
 
       if (node && node.kind === 'category') {
         dictName = node.dictName;
         className = node.className;
         isMeta = node.isMeta;
+        environmentId = node.environmentId;
         category = node.name;
       } else if (node && node.kind === 'side') {
         dictName = node.dictName;
         className = node.className;
         isMeta = node.isMeta;
+        environmentId = node.environmentId;
         const input = await vscode.window.showInputBox({
           prompt: `Category for new method on ${className}${isMeta ? ' class' : ''}`,
           placeHolder: 'e.g. accessing',
@@ -354,14 +362,17 @@ export function activate(context: vscode.ExtensionContext) {
       }
 
       const side = isMeta ? 'class' : 'instance';
-      const uri = vscode.Uri.parse(
+      let uriStr =
         `gemstone://${session.id}` +
         `/${encodeURIComponent(dictName)}` +
         `/${encodeURIComponent(className)}` +
         `/${side}` +
         `/${encodeURIComponent(category)}` +
-        `/new-method`
-      );
+        `/new-method`;
+      if (environmentId > 0) {
+        uriStr += `?env=${environmentId}`;
+      }
+      const uri = vscode.Uri.parse(uriStr);
       vscode.commands.executeCommand('vscode.open', uri);
     }),
 

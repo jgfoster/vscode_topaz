@@ -112,6 +112,43 @@ ws contents`;
   return splitLines(executeFetchString(session, `getClassNames(${dictName})`, code)).sort();
 }
 
+export interface DictEntry {
+  isClass: boolean;
+  category: string;   // class category for classes, '' for globals
+  name: string;
+}
+
+export function getDictionaryEntries(
+  session: ActiveSession, dictIndex: number,
+): DictEntry[] {
+  const code = `| ws dict |
+dict := System myUserProfile symbolList at: ${dictIndex}.
+ws := WriteStream on: Unicode7 new.
+dict keysAndValuesDo: [:k :v |
+  v isBehavior
+    ifTrue: [ws nextPutAll: '1'; tab; nextPutAll: (v category ifNil: ['']); tab; nextPutAll: k; lf]
+    ifFalse: [ws nextPutAll: '0'; tab; tab; nextPutAll: k asString; lf]].
+ws contents`;
+
+  const raw = executeFetchString(
+    session, `getDictionaryEntries(dictIndex: ${dictIndex})`, code,
+  );
+
+  const results: DictEntry[] = [];
+  for (const line of raw.split('\n')) {
+    if (line.length === 0) continue;
+    const parts = line.split('\t');
+    if (parts.length < 3) continue;
+    const isClass = parts[0] === '1';
+    const category = parts[1];
+    const name = parts[2];
+    if (name.length > 0) {
+      results.push({ isClass, category, name });
+    }
+  }
+  return results;
+}
+
 export function getMethodCategories(
   session: ActiveSession, className: string, isMeta: boolean
 ): string[] {
@@ -137,12 +174,69 @@ ws contents`;
   return splitLines(executeFetchString(session, `getMethodSelectors(${recv}, '${category}')`, code));
 }
 
+export interface EnvCategoryLine {
+  isMeta: boolean;
+  envId: number;
+  category: string;
+  selectors: string[];
+}
+
+export function getClassEnvironments(
+  session: ActiveSession, dictIndex: number, className: string, maxEnv: number,
+): EnvCategoryLine[] {
+  const code = `| class envs stream |
+envs := ${maxEnv}.
+class := (System myUserProfile symbolList at: ${dictIndex}) at: #'${escapeString(className)}'.
+stream := WriteStream on: Unicode7 new.
+{ class class. class. } do: [:eachClass |
+  0 to: envs do: [:env |
+    (eachClass _unifiedCategorys: env) keysAndValuesDo: [:categoryName :selectors |
+      stream
+        nextPutAll: eachClass name; tab;
+        nextPutAll: env printString; tab;
+        nextPutAll: categoryName; tab;
+        yourself.
+      selectors do: [:each |
+        stream nextPutAll: each; tab.
+      ].
+      stream lf.
+    ].
+  ].
+].
+stream contents`;
+
+  const raw = executeFetchString(
+    session, `getClassEnvironments(${className}, ${maxEnv})`, code,
+  );
+
+  const results: EnvCategoryLine[] = [];
+  for (const line of raw.split('\n')) {
+    if (line.length === 0) continue;
+    const parts = line.split('\t').filter(s => s.length > 0);
+    if (parts.length < 3) continue;
+    const receiverName = parts[0];
+    const envId = parseInt(parts[1], 10);
+    const category = parts[2];
+    const selectors = parts.slice(3).sort();
+    const isMeta = receiverName.endsWith(' class');
+    results.push({ isMeta, envId, category, selectors });
+  }
+  return results;
+}
+
 export function getMethodSource(
-  session: ActiveSession, className: string, isMeta: boolean, selector: string
+  session: ActiveSession, className: string, isMeta: boolean, selector: string,
+  environmentId: number = 0,
 ): string {
   const recv = receiver(className, isMeta);
-  const code = `(${recv} compiledMethodAt: #'${escapeString(selector)}') sourceString`;
-  return executeFetchString(session, `getMethodSource(${recv}>>#${selector})`, code);
+  if (environmentId === 0) {
+    const code = `(${recv} compiledMethodAt: #'${escapeString(selector)}') sourceString`;
+    return executeFetchString(session, `getMethodSource(${recv}>>#${selector})`, code);
+  }
+  const code = `(${recv} compiledMethodAt: #'${escapeString(selector)}' environmentId: ${environmentId}) sourceString`;
+  return executeFetchString(
+    session, `getMethodSource(${recv}>>#${selector} env:${environmentId})`, code,
+  );
 }
 
 export function getClassDefinition(
@@ -266,6 +360,7 @@ export function compileMethod(
   isMeta: boolean,
   category: string,
   source: string,
+  environmentId: number = 0,
 ): bigint {
   const recv = receiver(className, isMeta);
   logQuery(session.id, `compileMethod(${recv}, '${category}')`, source);
@@ -323,7 +418,7 @@ export function compileMethod(
     OOP_NIL,       // symbolList (use default)
     OOP_NIL,       // overrideSelector
     0,             // compileFlags
-    0,             // environmentId
+    environmentId,
   );
   if (compileErr.number !== 0) {
     if (compileErr.context !== OOP_NIL && compileErr.context !== 0n) {
