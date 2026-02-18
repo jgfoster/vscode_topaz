@@ -526,6 +526,28 @@ stream contents`;
   return results;
 }
 
+export function getInstVarNames(
+  session: ActiveSession, className: string,
+): string[] {
+  const code = `| ws |
+ws := WriteStream on: String new.
+${className} allInstVarNames do: [:each |
+  ws nextPutAll: each; lf].
+ws contents`;
+  return splitLines(executeFetchString(session, `getInstVarNames(${className})`, code));
+}
+
+export function getAllSelectors(
+  session: ActiveSession, className: string,
+): string[] {
+  const code = `| ws |
+ws := WriteStream on: Unicode7 new.
+${className} allSelectors asSortedCollection do: [:each |
+  ws nextPutAll: each; lf].
+ws contents`;
+  return splitLines(executeFetchString(session, `getAllSelectors(${className})`, code));
+}
+
 export function compileMethod(
   session: ActiveSession,
   className: string,

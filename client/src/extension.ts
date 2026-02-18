@@ -17,6 +17,9 @@ import { GemStoneFileSystemProvider } from './gemstoneFileSystemProvider';
 import { GemStoneDebugSession } from './gemstoneDebugSession';
 import { InspectorTreeProvider, InspectorNode } from './inspectorTreeProvider';
 import { GemStoneWorkspaceSymbolProvider } from './gemstoneSymbolProvider';
+import { GemStoneDefinitionProvider } from './gemstoneDefinitionProvider';
+import { GemStoneHoverProvider } from './gemstoneHoverProvider';
+import { GemStoneCompletionProvider } from './gemstoneCompletionProvider';
 import * as queries from './browserQueries';
 import { getGciLog } from './gciLog';
 
@@ -148,6 +151,28 @@ export function activate(context: vscode.ExtensionContext) {
           (err: unknown) => log.appendLine(`[Tree] reveal failed: ${err}`),
         );
     })
+  );
+
+  // ── GCI-backed providers (Definition + Hover + Completion) ─
+  const providerSelectors: vscode.DocumentFilter[] = [
+    { scheme: 'gemstone', language: 'gemstone-smalltalk' },
+    { scheme: 'file', language: 'gemstone-topaz' },
+    { scheme: 'file', language: 'gemstone-tonel' },
+  ];
+  const selectorResolver = {
+    getSelector: (uri: string, position: vscode.Position) =>
+      client.sendRequest<string | null>('gemstone/selectorAtPosition', {
+        textDocument: { uri },
+        position,
+      }),
+  };
+  const definitionProvider = new GemStoneDefinitionProvider(sessionManager, selectorResolver);
+  const hoverProvider = new GemStoneHoverProvider(sessionManager, selectorResolver);
+  const completionProvider = new GemStoneCompletionProvider(sessionManager);
+  context.subscriptions.push(
+    vscode.languages.registerDefinitionProvider(providerSelectors, definitionProvider),
+    vscode.languages.registerHoverProvider(providerSelectors, hoverProvider),
+    vscode.languages.registerCompletionItemProvider(providerSelectors, completionProvider),
   );
 
   // ── Debugger ─────────────────────────────────────────────
@@ -424,6 +449,7 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('gemstone.refreshBrowser', () => {
       browserTreeProvider.refresh();
       symbolProvider.invalidateCache();
+      completionProvider.invalidateCache();
     }),
 
     vscode.commands.registerCommand('gemstone.newClass', (node?: BrowserNode) => {

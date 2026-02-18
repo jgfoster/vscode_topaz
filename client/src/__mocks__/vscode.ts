@@ -282,6 +282,51 @@ export class SymbolInformation {
 
 export const languages = {
   registerWorkspaceSymbolProvider: vi.fn(() => ({ dispose: () => {} })),
+  registerDefinitionProvider: vi.fn(() => ({ dispose: () => {} })),
+  registerHoverProvider: vi.fn(() => ({ dispose: () => {} })),
+  registerCompletionItemProvider: vi.fn(() => ({ dispose: () => {} })),
+  setTextDocumentLanguage: vi.fn(),
+};
+
+// ── MarkdownString mock ──────────────────────────────────
+
+export class MarkdownString {
+  constructor(public value: string = '') {}
+  appendMarkdown(value: string): MarkdownString {
+    this.value += value;
+    return this;
+  }
+  appendCodeblock(code: string, language?: string): MarkdownString {
+    this.value += '\n```' + (language || '') + '\n' + code + '\n```\n';
+    return this;
+  }
+}
+
+// ── Hover mock ───────────────────────────────────────────
+
+export class Hover {
+  constructor(
+    public contents: MarkdownString | MarkdownString[],
+    public range?: Range,
+  ) {}
+}
+
+// ── CompletionItem mock ──────────────────────────────────
+
+export class CompletionItem {
+  detail?: string;
+  documentation?: string;
+  sortText?: string;
+  constructor(public label: string, public kind?: number) {}
+}
+
+export const CompletionItemKind = {
+  Method: 1,
+  Field: 4,
+  Variable: 5,
+  Class: 6,
+  Keyword: 13,
+  Constant: 20,
 };
 
 // ── Disposable mock ───────────────────────────────────────
