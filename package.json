@@ -424,6 +424,12 @@
         "title": "Class Hierarchy",
         "category": "GemStone",
         "icon": "$(type-hierarchy)"
+      },
+      {
+        "command": "gemstone.toggleSelectorBreakpoint",
+        "title": "Toggle Selector Breakpoint",
+        "category": "GemStone",
+        "icon": "$(debug-breakpoint)"
       }
     ],
     "menus": {
@@ -616,6 +622,11 @@
           "command": "gemstone.implementorsOf",
           "when": "editorTextFocus && gemstone.hasActiveSession",
           "group": "2_navigation@1"
+        },
+        {
+          "command": "gemstone.toggleSelectorBreakpoint",
+          "when": "editorTextFocus && gemstone.hasActiveSession && resourceScheme == gemstone",
+          "group": "3_gemstoneBreakpoints@0"
         }
       ]
     },
@@ -650,6 +661,11 @@
             }
           }
         }
+      }
+    ],
+    "breakpoints": [
+      {
+        "language": "gemstone-smalltalk"
       }
     ],
     "keybindings": [

@@ -20,6 +20,8 @@ import { GemStoneWorkspaceSymbolProvider } from './gemstoneSymbolProvider';
 import { GemStoneDefinitionProvider } from './gemstoneDefinitionProvider';
 import { GemStoneHoverProvider } from './gemstoneHoverProvider';
 import { GemStoneCompletionProvider } from './gemstoneCompletionProvider';
+import { BreakpointManager } from './breakpointManager';
+import { SelectorBreakpointManager } from './selectorBreakpointManager';
 import * as queries from './browserQueries';
 import { getGciLog } from './gciLog';
 
@@ -175,12 +177,30 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.languages.registerCompletionItemProvider(providerSelectors, completionProvider),
   );
 
-  // ── Debugger ─────────────────────────────────────────────
+  // ── Breakpoints + Debugger ───────────────────────────────
+  const breakpointManager = new BreakpointManager(sessionManager);
+  breakpointManager.register(context);
+
+  const selectorBreakpointManager = new SelectorBreakpointManager(sessionManager);
+  selectorBreakpointManager.register(context);
+
+  // Re-apply breakpoints after method recompilation
+  context.subscriptions.push(
+    gemstoneFs.onDidChangeFile(events => {
+      for (const event of events) {
+        if (event.type === vscode.FileChangeType.Changed) {
+          breakpointManager.invalidateForUri(event.uri);
+          selectorBreakpointManager.invalidateForUri(event.uri);
+        }
+      }
+    }),
+  );
+
   context.subscriptions.push(
     vscode.debug.registerDebugAdapterDescriptorFactory('gemstone', {
       createDebugAdapterDescriptor() {
         return new vscode.DebugAdapterInlineImplementation(
-          new GemStoneDebugSession(sessionManager),
+          new GemStoneDebugSession(sessionManager, breakpointManager),
         );
       },
     }),
@@ -434,6 +454,8 @@ export function activate(context: vscode.ExtensionContext) {
       sessionManager.logout(id);
       sessionTreeProvider.refresh();
       inspectorProvider.removeSessionItems(id);
+      breakpointManager.clearAllForSession(id);
+      selectorBreakpointManager.clearAllForSession(id);
       vscode.window.showInformationMessage(`Session ${id}: Logged out.`);
     }),
 
@@ -894,6 +916,12 @@ export function activate(context: vscode.ExtensionContext) {
         `/definition`
       );
       vscode.commands.executeCommand('gemstone.openDocument', uri);
+    }),
+
+    vscode.commands.registerCommand('gemstone.toggleSelectorBreakpoint', () => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) return;
+      selectorBreakpointManager.toggleBreakpointAtCursor(editor);
     }),
   );
 }

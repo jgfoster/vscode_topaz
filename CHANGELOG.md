@@ -6,6 +6,9 @@ All notable changes to the **GemStone Smalltalk** extension will be documented i
 
 ### Added
 
+- **Line-based breakpoints** — click the gutter in a `gemstone://` method to set/clear breakpoints; maps editor lines to GemStone step points via `_sourceOffsets`; breakpoints are managed per-method and cleared on recompile
+- **Selector breakpoints** — right-click a selector in a `gemstone://` method and choose "Toggle Selector Breakpoint" to set a breakpoint on that specific step point; breakpointed selectors are highlighted with a red border decoration; supports multi-keyword selectors (e.g., `assert:equals:` highlights all keyword parts); underscores recognized in selectors
+- **Debug-enabled code execution** — Display It, Execute It, and Inspect It now pass `GCI_PERFORM_FLAG_ENABLE_DEBUG` so breakpoints fire during execution; errors offer a "Debug" button to open the VS Code debugger
 - **Multi-environment method dictionaries** — new `gemstone.maxEnvironment` setting controls how many method environments are displayed (default 0 shows standard Smalltalk only; higher values show additional environments, e.g., Python)
 - **Class categories in browser** — dictionaries now group classes by category with a `** ALL **` synthetic category listing every class and `** OTHER GLOBALS **` for non-class dictionary entries (shown with `symbol-variable` icon)
 - **`** ALL **` method category** — each side node includes a synthetic `** ALL **` category that lists every method alphabetically, making it easy to find methods without knowing their category
@@ -50,8 +53,8 @@ All notable changes to the **GemStone Smalltalk** extension will be documented i
   - Click any frame to view its method source with GemStone (Smalltalk) syntax highlighting
   - "Executed Code" frame for doit expressions that triggered the error
   - Arguments & Temps scope and Receiver scope with drill-down into named/indexed instance variables
-  - Step Over, Step Into, Step Out via non-blocking GCI calls
-  - Continue execution (resumes process; re-enters debug on subsequent errors)
+  - Step Over, Step Into, Step Out via blocking GCI calls (`gciStepOverFromLevel:` etc.)
+  - Continue execution via `GciTsContinueWith` (resumes process; re-enters debug on subsequent errors)
   - Evaluate expressions in the Debug Console in the context of any stack frame
   - Restart Frame support via `trimStackToLevel:`
   - Disconnect clears the suspended GsProcess stack

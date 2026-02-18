@@ -101,6 +101,21 @@ export const ViewColumn = {
   Three: 3,
 };
 
+// ── OverviewRulerLane mock ────────────────────────────────
+
+export const OverviewRulerLane = {
+  Left: 1,
+  Center: 2,
+  Right: 4,
+  Full: 7,
+};
+
+// ── ThemeColor mock ───────────────────────────────────────
+
+export class ThemeColor {
+  constructor(public readonly id: string) {}
+}
+
 // ── Window mock ────────────────────────────────────────────
 
 function createMockWebview() {
@@ -134,6 +149,9 @@ export const window = {
   showWarningMessage: vi.fn(),
   createTreeView: vi.fn(() => ({ dispose: () => {} })),
   createOutputChannel: vi.fn(() => ({ appendLine: vi.fn(), show: vi.fn(), dispose: vi.fn() })),
+  createTextEditorDecorationType: vi.fn(() => ({ dispose: vi.fn() })),
+  visibleTextEditors: [] as unknown[],
+  onDidChangeVisibleTextEditors: vi.fn(() => ({ dispose: () => {} })),
 };
 
 // ── Workspace mock ─────────────────────────────────────────
@@ -141,6 +159,7 @@ export const window = {
 export const workspace = {
   getConfiguration,
   onDidChangeConfiguration: vi.fn(() => ({ dispose: () => {} })),
+  textDocuments: [] as unknown[],
 };
 
 // ── Commands mock ──────────────────────────────────────────
@@ -328,6 +347,31 @@ export const CompletionItemKind = {
   Keyword: 13,
   Constant: 20,
 };
+
+// ── Debug mock ───────────────────────────────────────────
+
+export const debug = {
+  breakpoints: [] as unknown[],
+  onDidChangeBreakpoints: vi.fn(() => ({ dispose: () => {} })),
+  startDebugging: vi.fn(),
+  registerDebugAdapterDescriptorFactory: vi.fn(() => ({ dispose: () => {} })),
+  registerDebugConfigurationProvider: vi.fn(() => ({ dispose: () => {} })),
+};
+
+export class Breakpoint {
+  id = '';
+  enabled = true;
+  condition?: string;
+  hitCondition?: string;
+  logMessage?: string;
+}
+
+export class SourceBreakpoint extends Breakpoint {
+  constructor(public location: Location, enabled = true) {
+    super();
+    this.enabled = enabled;
+  }
+}
 
 // ── Disposable mock ───────────────────────────────────────
 

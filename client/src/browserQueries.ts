@@ -548,6 +548,126 @@ ws contents`;
   return splitLines(executeFetchString(session, `getAllSelectors(${className})`, code));
 }
 
+// ── Breakpoints ──────────────────────────────────────────
+
+function compiledMethodExpr(
+  className: string, isMeta: boolean, selector: string, environmentId: number,
+): string {
+  const recv = receiver(className, isMeta);
+  return `(${recv} compiledMethodAt: #'${escapeString(selector)}' environmentId: ${environmentId})`;
+}
+
+export function getSourceOffsets(
+  session: ActiveSession,
+  className: string, isMeta: boolean, selector: string, environmentId: number = 0,
+): number[] {
+  const method = compiledMethodExpr(className, isMeta, selector, environmentId);
+  const code = `| ws |
+ws := WriteStream on: String new.
+${method} _sourceOffsets do: [:each |
+  ws nextPutAll: each printString; lf].
+ws contents`;
+  return splitLines(executeFetchString(
+    session, `getSourceOffsets(${receiver(className, isMeta)}>>#${selector})`, code,
+  )).map(s => parseInt(s, 10));
+}
+
+export function setBreakAtStepPoint(
+  session: ActiveSession,
+  className: string, isMeta: boolean, selector: string,
+  stepPoint: number, environmentId: number = 0,
+): void {
+  const method = compiledMethodExpr(className, isMeta, selector, environmentId);
+  const code = `${method} setBreakAtStepPoint: ${stepPoint}. 'ok'`;
+  executeFetchString(
+    session, `setBreak(${receiver(className, isMeta)}>>#${selector}, step:${stepPoint})`, code,
+  );
+}
+
+export function clearBreakAtStepPoint(
+  session: ActiveSession,
+  className: string, isMeta: boolean, selector: string,
+  stepPoint: number, environmentId: number = 0,
+): void {
+  const method = compiledMethodExpr(className, isMeta, selector, environmentId);
+  const code = `${method} clearBreakAtStepPoint: ${stepPoint}. 'ok'`;
+  executeFetchString(
+    session, `clearBreak(${receiver(className, isMeta)}>>#${selector}, step:${stepPoint})`, code,
+  );
+}
+
+export function clearAllBreaks(
+  session: ActiveSession,
+  className: string, isMeta: boolean, selector: string, environmentId: number = 0,
+): void {
+  const method = compiledMethodExpr(className, isMeta, selector, environmentId);
+  const code = `${method} clearAllBreaks. 'ok'`;
+  executeFetchString(
+    session, `clearAllBreaks(${receiver(className, isMeta)}>>#${selector})`, code,
+  );
+}
+
+// ── Step Point Selector Ranges ───────────────────────────
+
+export interface StepPointSelectorInfo {
+  stepPoint: number;        // 1-based step point index
+  selectorOffset: number;   // 0-based char offset of token in source
+  selectorLength: number;   // char length of the token text
+  selectorText: string;     // the token itself
+}
+
+export function getStepPointSelectorRanges(
+  session: ActiveSession,
+  className: string, isMeta: boolean, selector: string, environmentId: number = 0,
+): StepPointSelectorInfo[] {
+  const method = compiledMethodExpr(className, isMeta, selector, environmentId);
+  // Scan the source text at each _sourceOffsets position to extract the token.
+  // _sourceOffsets returns 1-based offsets (Smalltalk convention).
+  // We convert to 0-based for JavaScript by subtracting 1 in the output.
+  const code = `| method source offsets ws |
+method := ${method}.
+source := method sourceString.
+offsets := method _sourceOffsets.
+ws := WriteStream on: String new.
+1 to: offsets size do: [:stepIdx |
+  | offset1 end ch |
+  offset1 := offsets at: stepIdx.
+  (offset1 >= 1 and: [offset1 <= source size]) ifTrue: [
+    ch := source at: offset1.
+    (ch isLetter or: [ch = $_]) ifTrue: [
+      end := offset1 + 1.
+      [end <= source size and: [
+        | c |
+        c := source at: end.
+        c isLetter or: [c isDigit or: [c = $: or: [c = $_]]]]]
+          whileTrue: [end := end + 1].
+      ws nextPutAll: stepIdx printString; tab;
+         nextPutAll: (offset1 - 1) printString; tab;
+         nextPutAll: (end - offset1) printString; tab;
+         nextPutAll: (source copyFrom: offset1 to: end - 1); lf]]].
+ws contents`;
+
+  const raw = executeFetchString(
+    session,
+    `getStepPointSelectorRanges(${receiver(className, isMeta)}>>#${selector})`,
+    code,
+  );
+
+  const results: StepPointSelectorInfo[] = [];
+  for (const line of raw.split('\n')) {
+    if (line.length === 0) continue;
+    const parts = line.split('\t');
+    if (parts.length < 4) continue;
+    results.push({
+      stepPoint: parseInt(parts[0], 10),
+      selectorOffset: parseInt(parts[1], 10),
+      selectorLength: parseInt(parts[2], 10),
+      selectorText: parts[3],
+    });
+  }
+  return results;
+}
+
 export function compileMethod(
   session: ActiveSession,
   className: string,

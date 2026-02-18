@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { SessionManager, ActiveSession } from './sessionManager';
-import { OOP_ILLEGAL, OOP_NIL } from './gciConstants';
+import { OOP_ILLEGAL, OOP_NIL, GCI_PERFORM_FLAG_ENABLE_DEBUG } from './gciConstants';
 import { logQuery, logResult, logError, logInfo } from './gciLog';
 import { InspectorTreeProvider } from './inspectorTreeProvider';
 
@@ -94,7 +94,7 @@ export class CodeExecutor {
     try {
       const { success, err: startErr } = session.gci.GciTsNbExecute(
         session.handle, code, oopClassString,
-        OOP_ILLEGAL, OOP_NIL, 0, 0,
+        OOP_ILLEGAL, OOP_NIL, GCI_PERFORM_FLAG_ENABLE_DEBUG, 0,
       );
       if (!success) {
         const msg = `Execution failed to start: ${startErr.message || `error ${startErr.number}`}`;
@@ -387,7 +387,7 @@ export class CodeExecutor {
     try {
       const { success, err: startErr } = session.gci.GciTsNbExecute(
         session.handle, code, oopClassString,
-        OOP_ILLEGAL, OOP_NIL, 0, 0,
+        OOP_ILLEGAL, OOP_NIL, GCI_PERFORM_FLAG_ENABLE_DEBUG, 0,
       );
       if (!success) {
         const msg = `Execution failed to start: ${startErr.message || `error ${startErr.number}`}`;
