@@ -38,6 +38,7 @@ export function __setConfig(section: string, key: string, value: unknown): void 
 
 export class TreeItem {
   label?: string;
+  id?: string;
   description?: string;
   tooltip?: string;
   iconPath?: unknown;
@@ -231,6 +232,56 @@ export const FileChangeType = {
   Changed: 1,
   Created: 2,
   Deleted: 3,
+};
+
+// ── Position & Location mock ──────────────────────────────
+
+export class Position {
+  constructor(public readonly line: number, public readonly character: number) {}
+}
+
+export class Range {
+  constructor(
+    public readonly start: Position,
+    public readonly end: Position,
+  ) {}
+}
+
+export class Location {
+  constructor(public readonly uri: Uri, public readonly range: Position | Range) {}
+}
+
+// ── SymbolInformation mock ───────────────────────────────
+
+export const SymbolKind = {
+  File: 0,
+  Module: 1,
+  Namespace: 2,
+  Package: 3,
+  Class: 4,
+  Method: 5,
+  Property: 6,
+  Field: 7,
+  Constructor: 8,
+  Enum: 9,
+  Interface: 10,
+  Function: 11,
+  Variable: 12,
+};
+
+export class SymbolInformation {
+  constructor(
+    public readonly name: string,
+    public readonly kind: number,
+    public readonly containerName: string,
+    public readonly location: Location,
+  ) {}
+}
+
+// ── Languages mock ───────────────────────────────────────
+
+export const languages = {
+  registerWorkspaceSymbolProvider: vi.fn(() => ({ dispose: () => {} })),
 };
 
 // ── Disposable mock ───────────────────────────────────────

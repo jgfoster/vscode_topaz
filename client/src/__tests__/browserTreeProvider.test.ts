@@ -23,7 +23,7 @@ vi.mock('../browserQueries', () => ({
   ]),
 }));
 
-import { TreeItemCollapsibleState, ThemeIcon, __setConfig, __resetConfig } from '../__mocks__/vscode';
+import { TreeItemCollapsibleState, ThemeIcon, Uri, __setConfig, __resetConfig } from '../__mocks__/vscode';
 import { BrowserTreeProvider, BrowserNode } from '../browserTreeProvider';
 import { SessionManager } from '../sessionManager';
 
@@ -314,7 +314,7 @@ describe('BrowserTreeProvider', () => {
       expect(item.collapsibleState).toBe(TreeItemCollapsibleState.None);
       expect((item.iconPath as ThemeIcon).id).toBe('symbol-structure');
       expect(item.command).toBeDefined();
-      expect(item.command!.command).toBe('vscode.open');
+      expect(item.command!.command).toBe('gemstone.openDocument');
     });
 
     it('renders a comment node as a leaf with command', () => {
@@ -367,7 +367,7 @@ describe('BrowserTreeProvider', () => {
       expect(item.label).toBe('at:put:');
       expect(item.collapsibleState).toBe(TreeItemCollapsibleState.None);
       expect(item.command).toBeDefined();
-      expect(item.command!.command).toBe('vscode.open');
+      expect(item.command!.command).toBe('gemstone.openDocument');
       // URI should contain the selector
       const uri = item.command!.arguments![0];
       expect(uri.scheme).toBe('gemstone');
@@ -400,6 +400,388 @@ describe('BrowserTreeProvider', () => {
         command: 'gemstone.inspectGlobal',
         arguments: [node],
       });
+    });
+  });
+
+  describe('getTreeItem sets id (nodeId)', () => {
+    let provider: BrowserTreeProvider;
+
+    beforeEach(() => {
+      provider = new BrowserTreeProvider(makeSessionManager(true));
+    });
+
+    it('dictionary id', () => {
+      const node: BrowserNode = { kind: 'dictionary', sessionId: 1, dictIndex: 1, name: 'Globals' };
+      expect(provider.getTreeItem(node).id).toBe('dict/1/Globals');
+    });
+
+    it('classCategory id', () => {
+      const node: BrowserNode = { kind: 'classCategory', sessionId: 1, dictIndex: 1, dictName: 'Globals', name: '** ALL **' };
+      expect(provider.getTreeItem(node).id).toBe('classcat/1/Globals/** ALL **');
+    });
+
+    it('class id', () => {
+      const node: BrowserNode = { kind: 'class', sessionId: 1, dictIndex: 1, dictName: 'Globals', name: 'Array' };
+      expect(provider.getTreeItem(node).id).toBe('class/1/Globals/Array');
+    });
+
+    it('definition id', () => {
+      const node: BrowserNode = { kind: 'definition', sessionId: 1, dictIndex: 1, dictName: 'Globals', className: 'Array' };
+      expect(provider.getTreeItem(node).id).toBe('def/1/Globals/Array');
+    });
+
+    it('comment id', () => {
+      const node: BrowserNode = { kind: 'comment', sessionId: 1, dictIndex: 1, dictName: 'Globals', className: 'Array' };
+      expect(provider.getTreeItem(node).id).toBe('comment/1/Globals/Array');
+    });
+
+    it('side id', () => {
+      const node: BrowserNode = {
+        kind: 'side', sessionId: 1, dictIndex: 1, dictName: 'Globals', className: 'Array',
+        isMeta: false, environmentId: 0,
+      };
+      expect(provider.getTreeItem(node).id).toBe('side/1/Globals/Array/0/0');
+    });
+
+    it('side id (class side, env 2)', () => {
+      const node: BrowserNode = {
+        kind: 'side', sessionId: 1, dictIndex: 1, dictName: 'Globals', className: 'Array',
+        isMeta: true, environmentId: 2,
+      };
+      expect(provider.getTreeItem(node).id).toBe('side/1/Globals/Array/1/2');
+    });
+
+    it('category id', () => {
+      const node: BrowserNode = {
+        kind: 'category', sessionId: 1, dictIndex: 1, dictName: 'Globals', className: 'Array',
+        isMeta: false, environmentId: 0, name: 'accessing',
+      };
+      expect(provider.getTreeItem(node).id).toBe('mcat/1/Globals/Array/0/0/accessing');
+    });
+
+    it('method id', () => {
+      const node: BrowserNode = {
+        kind: 'method', sessionId: 1, dictIndex: 1, dictName: 'Globals', className: 'Array',
+        isMeta: false, environmentId: 0, category: 'accessing', selector: 'at:put:',
+      };
+      expect(provider.getTreeItem(node).id).toBe('method/1/Globals/Array/0/0/accessing/at:put:');
+    });
+
+    it('global id', () => {
+      const node: BrowserNode = { kind: 'global', sessionId: 1, dictIndex: 1, dictName: 'Globals', name: 'AllUsers' };
+      expect(provider.getTreeItem(node).id).toBe('global/1/Globals/AllUsers');
+    });
+
+    it('id uses dictName not dictIndex', () => {
+      const node1: BrowserNode = { kind: 'dictionary', sessionId: 1, dictIndex: 1, name: 'Globals' };
+      const node2: BrowserNode = { kind: 'dictionary', sessionId: 1, dictIndex: 5, name: 'Globals' };
+      expect(provider.getTreeItem(node1).id).toBe(provider.getTreeItem(node2).id);
+    });
+  });
+
+  describe('getParent', () => {
+    let provider: BrowserTreeProvider;
+
+    beforeEach(() => {
+      provider = new BrowserTreeProvider(makeSessionManager(true));
+    });
+
+    it('dictionary has no parent', () => {
+      const node: BrowserNode = { kind: 'dictionary', sessionId: 1, dictIndex: 1, name: 'Globals' };
+      expect(provider.getParent(node)).toBeNull();
+    });
+
+    it('classCategory parent is dictionary', () => {
+      const node: BrowserNode = { kind: 'classCategory', sessionId: 1, dictIndex: 1, dictName: 'Globals', name: '** ALL **' };
+      const parent = provider.getParent(node);
+      expect(parent).toMatchObject({ kind: 'dictionary', name: 'Globals' });
+    });
+
+    it('class parent is ** ALL ** classCategory', () => {
+      const node: BrowserNode = { kind: 'class', sessionId: 1, dictIndex: 1, dictName: 'Globals', name: 'Array' };
+      const parent = provider.getParent(node);
+      expect(parent).toMatchObject({ kind: 'classCategory', name: '** ALL **', dictName: 'Globals' });
+    });
+
+    it('definition parent is class', () => {
+      const node: BrowserNode = { kind: 'definition', sessionId: 1, dictIndex: 1, dictName: 'Globals', className: 'Array' };
+      const parent = provider.getParent(node);
+      expect(parent).toMatchObject({ kind: 'class', name: 'Array' });
+    });
+
+    it('comment parent is class', () => {
+      const node: BrowserNode = { kind: 'comment', sessionId: 1, dictIndex: 1, dictName: 'Globals', className: 'Array' };
+      const parent = provider.getParent(node);
+      expect(parent).toMatchObject({ kind: 'class', name: 'Array' });
+    });
+
+    it('side parent is class', () => {
+      const node: BrowserNode = {
+        kind: 'side', sessionId: 1, dictIndex: 1, dictName: 'Globals', className: 'Array',
+        isMeta: false, environmentId: 0,
+      };
+      const parent = provider.getParent(node);
+      expect(parent).toMatchObject({ kind: 'class', name: 'Array' });
+    });
+
+    it('category parent is side', () => {
+      const node: BrowserNode = {
+        kind: 'category', sessionId: 1, dictIndex: 1, dictName: 'Globals', className: 'Array',
+        isMeta: false, environmentId: 0, name: 'accessing',
+      };
+      const parent = provider.getParent(node);
+      expect(parent).toMatchObject({ kind: 'side', className: 'Array', isMeta: false, environmentId: 0 });
+    });
+
+    it('method parent is category', () => {
+      const node: BrowserNode = {
+        kind: 'method', sessionId: 1, dictIndex: 1, dictName: 'Globals', className: 'Array',
+        isMeta: false, environmentId: 0, category: 'accessing', selector: 'size',
+      };
+      const parent = provider.getParent(node);
+      expect(parent).toMatchObject({ kind: 'category', name: 'accessing', className: 'Array' });
+    });
+
+    it('global parent is ** OTHER GLOBALS ** classCategory', () => {
+      const node: BrowserNode = { kind: 'global', sessionId: 1, dictIndex: 1, dictName: 'Globals', name: 'AllUsers' };
+      const parent = provider.getParent(node);
+      expect(parent).toMatchObject({ kind: 'classCategory', name: '** OTHER GLOBALS **' });
+    });
+
+    it('method ancestor chain reaches root', () => {
+      const method: BrowserNode = {
+        kind: 'method', sessionId: 1, dictIndex: 1, dictName: 'Globals', className: 'Array',
+        isMeta: false, environmentId: 0, category: 'accessing', selector: 'size',
+      };
+      const chain: string[] = [];
+      let node: BrowserNode | null = method;
+      while (node) {
+        chain.push(node.kind);
+        node = provider.getParent(node);
+      }
+      expect(chain).toEqual(['method', 'category', 'side', 'class', 'classCategory', 'dictionary']);
+    });
+
+    it('parent ids match getTreeItem ids', () => {
+      const method: BrowserNode = {
+        kind: 'method', sessionId: 1, dictIndex: 1, dictName: 'Globals', className: 'Array',
+        isMeta: false, environmentId: 0, category: 'accessing', selector: 'size',
+      };
+      // The parent of a method should have an id matching a real category node's id
+      const parent = provider.getParent(method)!;
+      const realCat: BrowserNode = {
+        kind: 'category', sessionId: 1, dictIndex: 99, dictName: 'Globals', className: 'Array',
+        isMeta: false, environmentId: 0, name: 'accessing',
+      };
+      expect(provider.getTreeItem(parent).id).toBe(provider.getTreeItem(realCat).id);
+    });
+  });
+
+  describe('nodeForUri', () => {
+    let provider: BrowserTreeProvider;
+
+    beforeEach(() => {
+      provider = new BrowserTreeProvider(makeSessionManager(true));
+    });
+
+    it('returns null for non-gemstone URIs', () => {
+      const uri = Uri.parse('file:///some/path.gs');
+      expect(provider.nodeForUri(uri)).toBeNull();
+    });
+
+    it('returns null for short paths', () => {
+      const uri = Uri.parse('gemstone://1/Globals');
+      expect(provider.nodeForUri(uri)).toBeNull();
+    });
+
+    it('returns definition node', () => {
+      const uri = Uri.parse('gemstone://1/Globals/Array/definition');
+      const node = provider.nodeForUri(uri);
+      expect(node).toMatchObject({ kind: 'definition', sessionId: 1, dictName: 'Globals', className: 'Array' });
+    });
+
+    it('returns comment node', () => {
+      const uri = Uri.parse('gemstone://1/Globals/Array/comment');
+      const node = provider.nodeForUri(uri);
+      expect(node).toMatchObject({ kind: 'comment', sessionId: 1, dictName: 'Globals', className: 'Array' });
+    });
+
+    it('returns method node for instance side', () => {
+      const uri = Uri.parse('gemstone://1/Globals/Array/instance/accessing/size');
+      const node = provider.nodeForUri(uri);
+      expect(node).toMatchObject({
+        kind: 'method', sessionId: 1, dictName: 'Globals', className: 'Array',
+        isMeta: false, category: 'accessing', selector: 'size', environmentId: 0,
+      });
+    });
+
+    it('returns method node for class side', () => {
+      const uri = Uri.parse('gemstone://1/Globals/Array/class/creation/new');
+      const node = provider.nodeForUri(uri);
+      expect(node).toMatchObject({
+        kind: 'method', isMeta: true, category: 'creation', selector: 'new',
+      });
+    });
+
+    it('parses encoded selector', () => {
+      const uri = Uri.parse('gemstone://1/Globals/Array/instance/accessing/at%3Aput%3A');
+      const node = provider.nodeForUri(uri);
+      expect(node).toMatchObject({ kind: 'method', selector: 'at:put:' });
+    });
+
+    it('parses env query parameter', () => {
+      const uri = Uri.parse('gemstone://1/Globals/Array/instance/python/__len__?env=2');
+      const node = provider.nodeForUri(uri);
+      expect(node).toMatchObject({ kind: 'method', environmentId: 2 });
+    });
+
+    it('returns null for new-method URIs', () => {
+      const uri = Uri.parse('gemstone://1/Globals/Array/instance/accessing/new-method');
+      expect(provider.nodeForUri(uri)).toBeNull();
+    });
+
+    it('returns null for new-class URIs', () => {
+      const uri = Uri.parse('gemstone://1/Globals/new-class');
+      expect(provider.nodeForUri(uri)).toBeNull();
+    });
+
+    it('returns null for 5-segment paths', () => {
+      const uri = Uri.parse('gemstone://1/Globals/Array/instance/accessing');
+      expect(provider.nodeForUri(uri)).toBeNull();
+    });
+
+    it('nodeForUri stores path-based ID for definition', () => {
+      const uri = Uri.parse('gemstone://1/Globals/Array/definition');
+      const node = provider.nodeForUri(uri)!;
+      expect(provider.getTreeItem(node).id).toBe('d:1:Globals/cc:** ALL **/c:Array/def');
+    });
+
+    it('nodeForUri stores path-based ID for method', () => {
+      const uri = Uri.parse('gemstone://1/Globals/Array/instance/accessing/size');
+      const node = provider.nodeForUri(uri)!;
+      expect(provider.getTreeItem(node).id).toBe(
+        'd:1:Globals/cc:** ALL **/c:Array/s:0:0/cat:accessing/m:size',
+      );
+    });
+
+    it('nodeForUri stores path-based ID for class-side method with env', () => {
+      const uri = Uri.parse('gemstone://1/Globals/Array/class/creation/new?env=2');
+      const node = provider.nodeForUri(uri)!;
+      expect(provider.getTreeItem(node).id).toBe(
+        'd:1:Globals/cc:** ALL **/c:Array/s:1:2/cat:creation/m:new',
+      );
+    });
+  });
+
+  describe('path-based IDs', () => {
+    let provider: BrowserTreeProvider;
+
+    beforeEach(() => {
+      provider = new BrowserTreeProvider(makeSessionManager(true));
+    });
+
+    it('getChildren assigns path-based IDs to root dictionaries', async () => {
+      const dicts = await provider.getChildren();
+      expect(provider.getTreeItem(dicts[0]).id).toBe('d:1:Globals');
+      expect(provider.getTreeItem(dicts[1]).id).toBe('d:1:UserGlobals');
+    });
+
+    it('same class under ** ALL ** and Collections gets different IDs', async () => {
+      const dicts = await provider.getChildren();
+      const cats = await provider.getChildren(dicts[0]); // dict Globals
+      const allCat = cats[0];  // ** ALL **
+      const collCat = cats[1]; // Collections
+
+      const allClasses = await provider.getChildren(allCat);
+      const collClasses = await provider.getChildren(collCat);
+
+      const arrayUnderAll = allClasses.find(c => c.kind === 'class' && c.name === 'Array')!;
+      const arrayUnderColl = collClasses.find(c => c.kind === 'class' && c.name === 'Array')!;
+
+      const idAll = provider.getTreeItem(arrayUnderAll).id;
+      const idColl = provider.getTreeItem(arrayUnderColl).id;
+
+      expect(idAll).toBe('d:1:Globals/cc:** ALL **/c:Array');
+      expect(idColl).toBe('d:1:Globals/cc:Collections/c:Array');
+      expect(idAll).not.toBe(idColl);
+    });
+
+    it('same method under ** ALL ** and real category gets different IDs', async () => {
+      const dicts = await provider.getChildren();
+      const cats = await provider.getChildren(dicts[0]);
+      const allClasses = await provider.getChildren(cats[0]); // ** ALL **
+      const arrayNode = allClasses.find(c => c.kind === 'class' && c.name === 'Array')!;
+      const sides = await provider.getChildren(arrayNode);
+      const instSide = sides.find(s => s.kind === 'side' && !s.isMeta)!;
+      const methodCats = await provider.getChildren(instSide);
+      const allMCat = methodCats[0]; // ** ALL **
+      const accMCat = methodCats.find(c => c.kind === 'category' && c.name === 'accessing')!;
+
+      const allMethods = await provider.getChildren(allMCat);
+      const accMethods = await provider.getChildren(accMCat);
+
+      const sizeAll = allMethods.find(m => m.kind === 'method' && m.selector === 'size')!;
+      const sizeAcc = accMethods.find(m => m.kind === 'method' && m.selector === 'size')!;
+
+      const idAll = provider.getTreeItem(sizeAll).id;
+      const idAcc = provider.getTreeItem(sizeAcc).id;
+
+      expect(idAll).not.toBe(idAcc);
+      expect(idAll).toContain('cat:** ALL **');
+      expect(idAcc).toContain('cat:accessing');
+    });
+
+    it('nodeForUri path matches getChildren path through ** ALL **', async () => {
+      // Walk the tree through ** ALL ** to get a method
+      const dicts = await provider.getChildren();
+      const cats = await provider.getChildren(dicts[0]);
+      const allClasses = await provider.getChildren(cats[0]); // ** ALL **
+      const arrayNode = allClasses.find(c => c.kind === 'class' && c.name === 'Array')!;
+      const sides = await provider.getChildren(arrayNode);
+      const instSide = sides.find(s => s.kind === 'side' && !s.isMeta)!;
+      const methodCats = await provider.getChildren(instSide);
+      const accCat = methodCats.find(c => c.kind === 'category' && c.name === 'accessing')!;
+      const methods = await provider.getChildren(accCat);
+      const sizeMethod = methods.find(m => m.kind === 'method' && m.selector === 'size')!;
+
+      const treeId = provider.getTreeItem(sizeMethod).id;
+
+      // Now parse the same method from a URI
+      const uri = Uri.parse('gemstone://1/Globals/Array/instance/accessing/size');
+      const fromUri = provider.nodeForUri(uri)!;
+      const uriId = provider.getTreeItem(fromUri).id;
+
+      expect(uriId).toBe(treeId);
+    });
+
+    it('getParent derives correct parent path from nodeForUri node', () => {
+      const uri = Uri.parse('gemstone://1/Globals/Array/instance/accessing/size');
+      const method = provider.nodeForUri(uri)!;
+
+      const cat = provider.getParent(method)!;
+      expect(provider.getTreeItem(cat).id).toBe(
+        'd:1:Globals/cc:** ALL **/c:Array/s:0:0/cat:accessing',
+      );
+
+      const side = provider.getParent(cat)!;
+      expect(provider.getTreeItem(side).id).toBe(
+        'd:1:Globals/cc:** ALL **/c:Array/s:0:0',
+      );
+
+      const cls = provider.getParent(side)!;
+      expect(provider.getTreeItem(cls).id).toBe(
+        'd:1:Globals/cc:** ALL **/c:Array',
+      );
+
+      const classCat = provider.getParent(cls)!;
+      expect(provider.getTreeItem(classCat).id).toBe(
+        'd:1:Globals/cc:** ALL **',
+      );
+
+      const dict = provider.getParent(classCat)!;
+      expect(provider.getTreeItem(dict).id).toBe('d:1:Globals');
+
+      expect(provider.getParent(dict)).toBeNull();
     });
   });
 

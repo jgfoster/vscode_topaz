@@ -402,6 +402,28 @@
         "title": "Move Down",
         "category": "GemStone",
         "icon": "$(arrow-down)"
+      },
+      {
+        "command": "gemstone.searchMethods",
+        "title": "Search Method Source",
+        "category": "GemStone",
+        "icon": "$(search)"
+      },
+      {
+        "command": "gemstone.sendersOf",
+        "title": "Senders Of...",
+        "category": "GemStone"
+      },
+      {
+        "command": "gemstone.implementorsOf",
+        "title": "Implementors Of...",
+        "category": "GemStone"
+      },
+      {
+        "command": "gemstone.classHierarchy",
+        "title": "Class Hierarchy",
+        "category": "GemStone",
+        "icon": "$(type-hierarchy)"
       }
     ],
     "menus": {
@@ -409,6 +431,11 @@
         {
           "command": "gemstone.addLogin",
           "when": "view == gemstoneLogins",
+          "group": "navigation"
+        },
+        {
+          "command": "gemstone.searchMethods",
+          "when": "view == gemstoneBrowser",
           "group": "navigation"
         },
         {
@@ -506,6 +533,14 @@
           "when": "view == gemstoneBrowser && viewItem == gemstoneMethod"
         },
         {
+          "command": "gemstone.sendersOf",
+          "when": "view == gemstoneBrowser && viewItem == gemstoneMethod"
+        },
+        {
+          "command": "gemstone.implementorsOf",
+          "when": "view == gemstoneBrowser && viewItem == gemstoneMethod"
+        },
+        {
           "command": "gemstone.renameCategory",
           "when": "view == gemstoneBrowser && viewItem == gemstoneCategory"
         },
@@ -520,6 +555,10 @@
         },
         {
           "command": "gemstone.moveClass",
+          "when": "view == gemstoneBrowser && viewItem == gemstoneClass"
+        },
+        {
+          "command": "gemstone.classHierarchy",
           "when": "view == gemstoneBrowser && viewItem == gemstoneClass"
         },
         {
@@ -567,6 +606,16 @@
           "command": "gemstone.executeIt",
           "when": "editorTextFocus && gemstone.hasActiveSession",
           "group": "1_modification@2"
+        },
+        {
+          "command": "gemstone.sendersOf",
+          "when": "editorTextFocus && gemstone.hasActiveSession",
+          "group": "2_navigation@0"
+        },
+        {
+          "command": "gemstone.implementorsOf",
+          "when": "editorTextFocus && gemstone.hasActiveSession",
+          "group": "2_navigation@1"
         }
       ]
     },

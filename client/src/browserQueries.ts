@@ -354,6 +354,178 @@ idx < sl size ifTrue: [
   executeFetchString(session, `moveDictionaryDown(${dictName})`, code);
 }
 
+export interface ClassNameEntry {
+  dictIndex: number;
+  dictName: string;
+  className: string;
+}
+
+export function getAllClassNames(session: ActiveSession): ClassNameEntry[] {
+  const code = `| ws sl seen |
+ws := WriteStream on: Unicode7 new.
+sl := System myUserProfile symbolList.
+seen := IdentitySet new.
+1 to: sl size do: [:idx |
+  | dict |
+  dict := sl at: idx.
+  dict keysAndValuesDo: [:k :v |
+    (v isBehavior and: [(seen includes: v) not]) ifTrue: [
+      seen add: v.
+      ws nextPutAll: idx printString; tab; nextPutAll: dict name; tab; nextPutAll: k; lf]]].
+ws contents`;
+
+  const raw = executeFetchString(session, 'getAllClassNames', code);
+  const results: ClassNameEntry[] = [];
+  for (const line of raw.split('\n')) {
+    if (line.length === 0) continue;
+    const parts = line.split('\t');
+    if (parts.length < 3) continue;
+    results.push({
+      dictIndex: parseInt(parts[0], 10),
+      dictName: parts[1],
+      className: parts[2],
+    });
+  }
+  return results;
+}
+
+export interface MethodSearchResult {
+  dictName: string;
+  className: string;
+  isMeta: boolean;
+  selector: string;
+  category: string;
+}
+
+// Shared Smalltalk snippet: build classDict mapping classes to their first dictionary name,
+// then serialize an array of GsNMethods as tab-separated lines.
+// envId parameter controls which environment to use for categoryOfSelector:.
+function methodSerialization(envId: number | string): string {
+  return `sl := System myUserProfile symbolList.
+classDict := IdentityDictionary new.
+sl do: [:dict |
+  dict keysAndValuesDo: [:k :v |
+    (v isBehavior and: [(classDict includesKey: v) not])
+      ifTrue: [classDict at: v put: dict name]]].
+stream := WriteStream on: Unicode7 new.
+limit := methods size min: 500.
+1 to: limit do: [:i |
+  | each cls baseClass |
+  each := methods at: i.
+  cls := each inClass.
+  baseClass := cls theNonMetaClass.
+  stream
+    nextPutAll: (classDict at: baseClass ifAbsent: ['']); tab;
+    nextPutAll: baseClass name; tab;
+    nextPutAll: (cls isMeta ifTrue: ['1'] ifFalse: ['0']); tab;
+    nextPutAll: each selector; tab;
+    nextPutAll: ((cls categoryOfSelector: each selector environmentId: ${envId}) ifNil: ['']); lf.
+].
+stream contents`;
+}
+
+function parseMethodSearchResults(raw: string): MethodSearchResult[] {
+  const results: MethodSearchResult[] = [];
+  for (const line of raw.split('\n')) {
+    if (line.length === 0) continue;
+    const parts = line.split('\t');
+    if (parts.length < 5) continue;
+    results.push({
+      dictName: parts[0],
+      className: parts[1],
+      isMeta: parts[2] === '1',
+      selector: parts[3],
+      category: parts[4],
+    });
+  }
+  return results;
+}
+
+export function searchMethodSource(
+  session: ActiveSession, term: string, ignoreCase: boolean,
+): MethodSearchResult[] {
+  const code = `| results methods stream limit classDict sl |
+results := ClassOrganizer new substringSearch: '${escapeString(term)}' ignoreCase: ${ignoreCase}.
+methods := results at: 1.
+${methodSerialization(0)}`;
+
+  return parseMethodSearchResults(
+    executeFetchString(session, `searchMethodSource('${term}')`, code),
+  );
+}
+
+export function sendersOf(
+  session: ActiveSession, selector: string, environmentId: number = 0,
+): MethodSearchResult[] {
+  const code = `| methods stream limit classDict sl |
+methods := ((ClassOrganizer new environmentId: ${environmentId}; yourself)
+  sendersOf: #'${escapeString(selector)}') at: 1.
+${methodSerialization(environmentId)}`;
+
+  return parseMethodSearchResults(
+    executeFetchString(session, `sendersOf(#${selector}, env:${environmentId})`, code),
+  );
+}
+
+export function implementorsOf(
+  session: ActiveSession, selector: string, environmentId: number = 0,
+): MethodSearchResult[] {
+  const code = `| methods stream limit classDict sl |
+methods := ((ClassOrganizer new environmentId: ${environmentId}; yourself)
+  implementorsOf: #'${escapeString(selector)}') asArray.
+${methodSerialization(environmentId)}`;
+
+  return parseMethodSearchResults(
+    executeFetchString(session, `implementorsOf(#${selector}, env:${environmentId})`, code),
+  );
+}
+
+export interface ClassHierarchyEntry {
+  className: string;
+  dictName: string;
+  kind: 'superclass' | 'self' | 'subclass';
+}
+
+export function getClassHierarchy(
+  session: ActiveSession, className: string,
+): ClassHierarchyEntry[] {
+  const code = `| organizer class supers subs stream classDict sl |
+organizer := ClassOrganizer new.
+class := System myUserProfile symbolList objectNamed: #'${escapeString(className)}'.
+supers := organizer allSuperclassesOf: class.
+subs := organizer subclassesOf: class.
+sl := System myUserProfile symbolList.
+classDict := IdentityDictionary new.
+sl do: [:dict |
+  dict keysAndValuesDo: [:k :v |
+    (v isBehavior and: [(classDict includesKey: v) not])
+      ifTrue: [classDict at: v put: dict name]]].
+stream := WriteStream on: Unicode7 new.
+supers reverseDo: [:each |
+  stream nextPutAll: (classDict at: each ifAbsent: ['']); tab;
+    nextPutAll: each name; tab; nextPutAll: 'superclass'; lf].
+stream nextPutAll: (classDict at: class ifAbsent: ['']); tab;
+  nextPutAll: class name; tab; nextPutAll: 'self'; lf.
+subs asSortedCollection do: [:each |
+  stream nextPutAll: (classDict at: each ifAbsent: ['']); tab;
+    nextPutAll: each name; tab; nextPutAll: 'subclass'; lf].
+stream contents`;
+
+  const raw = executeFetchString(session, `getClassHierarchy(${className})`, code);
+  const results: ClassHierarchyEntry[] = [];
+  for (const line of raw.split('\n')) {
+    if (line.length === 0) continue;
+    const parts = line.split('\t');
+    if (parts.length < 3) continue;
+    results.push({
+      dictName: parts[0],
+      className: parts[1],
+      kind: parts[2] as 'superclass' | 'self' | 'subclass',
+    });
+  }
+  return results;
+}
+
 export function compileMethod(
   session: ActiveSession,
   className: string,

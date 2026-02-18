@@ -16,7 +16,9 @@ import { BrowserTreeProvider, BrowserNode } from './browserTreeProvider';
 import { GemStoneFileSystemProvider } from './gemstoneFileSystemProvider';
 import { GemStoneDebugSession } from './gemstoneDebugSession';
 import { InspectorTreeProvider, InspectorNode } from './inspectorTreeProvider';
+import { GemStoneWorkspaceSymbolProvider } from './gemstoneSymbolProvider';
 import * as queries from './browserQueries';
+import { getGciLog } from './gciLog';
 
 let client: LanguageClient;
 let sessionManager: SessionManager;
@@ -113,12 +115,38 @@ export function activate(context: vscode.ExtensionContext) {
     })
   );
 
+  // ── Workspace Symbol Provider (Cmd+T class search) ──────
+  const symbolProvider = new GemStoneWorkspaceSymbolProvider(sessionManager);
+  context.subscriptions.push(
+    vscode.languages.registerWorkspaceSymbolProvider(symbolProvider),
+  );
+
   // Set language mode for gemstone:// documents
   context.subscriptions.push(
     vscode.workspace.onDidOpenTextDocument((doc) => {
       if (doc.uri.scheme === 'gemstone') {
         vscode.languages.setTextDocumentLanguage(doc, 'gemstone-smalltalk');
       }
+    })
+  );
+
+  // Sync browser tree selection with active editor
+  context.subscriptions.push(
+    vscode.window.onDidChangeActiveTextEditor((editor) => {
+      if (!editor || editor.document.uri.scheme !== 'gemstone') return;
+      const log = getGciLog();
+      log.appendLine(`[Tree] editor changed: ${editor.document.uri.toString()}`);
+      const node = browserTreeProvider.nodeForUri(editor.document.uri);
+      if (!node) {
+        log.appendLine('[Tree] nodeForUri returned null');
+        return;
+      }
+      log.appendLine(`[Tree] revealing ${node.kind} node, id=${JSON.stringify(node)}`);
+      browserTreeView.reveal(node, { select: true, focus: false, expand: true })
+        .then(
+          () => log.appendLine('[Tree] reveal succeeded'),
+          (err: unknown) => log.appendLine(`[Tree] reveal failed: ${err}`),
+        );
     })
   );
 
@@ -171,8 +199,83 @@ export function activate(context: vscode.ExtensionContext) {
   );
   updateStatusBar();
 
+  // ── Shared Helpers ─────────────────────────────────────
+
+  async function resolveSelector(node?: BrowserNode): Promise<string | undefined> {
+    if (node && node.kind === 'method') return node.selector;
+
+    const editor = vscode.window.activeTextEditor;
+    if (editor) {
+      if (!editor.selection.isEmpty) {
+        return editor.document.getText(editor.selection).trim();
+      }
+      // Ask LSP for selector at cursor position
+      if (client) {
+        try {
+          const selector = await client.sendRequest<string | null>(
+            'gemstone/selectorAtPosition',
+            {
+              textDocument: { uri: editor.document.uri.toString() },
+              position: editor.selection.active,
+            },
+          );
+          if (selector) return selector;
+        } catch {
+          // LSP not ready or request not supported
+        }
+      }
+    }
+
+    return vscode.window.showInputBox({
+      prompt: 'Enter selector',
+      placeHolder: 'e.g. at:put:',
+    });
+  }
+
+  async function showMethodResults(
+    session: { id: number },
+    results: queries.MethodSearchResult[],
+    title: string,
+  ): Promise<void> {
+    if (results.length === 0) {
+      vscode.window.showInformationMessage(`${title}: no results found.`);
+      return;
+    }
+
+    const items = results.map(r => ({
+      label: `${r.className}${r.isMeta ? ' class' : ''} >> #${r.selector}`,
+      description: r.category,
+      detail: r.dictName,
+      result: r,
+    }));
+
+    const picked = await vscode.window.showQuickPick(items, {
+      placeHolder: `${results.length} method${results.length === 1 ? '' : 's'} found`,
+      matchOnDescription: true,
+      matchOnDetail: true,
+    });
+    if (!picked) return;
+
+    const r = picked.result;
+    const side = r.isMeta ? 'class' : 'instance';
+    const uri = vscode.Uri.parse(
+      `gemstone://${session.id}` +
+      `/${encodeURIComponent(r.dictName)}` +
+      `/${encodeURIComponent(r.className)}` +
+      `/${side}` +
+      `/${encodeURIComponent(r.category)}` +
+      `/${encodeURIComponent(r.selector)}`
+    );
+    vscode.commands.executeCommand('gemstone.openDocument', uri);
+  }
+
   // ── Commands ───────────────────────────────────────────
   context.subscriptions.push(
+    vscode.commands.registerCommand('gemstone.openDocument', async (uri: vscode.Uri) => {
+      const doc = await vscode.workspace.openTextDocument(uri);
+      await vscode.window.showTextDocument(doc, { preview: false });
+    }),
+
     vscode.commands.registerCommand('gemstone.addLogin', () => {
       LoginEditorPanel.show(storage, treeProvider);
     }),
@@ -320,6 +423,7 @@ export function activate(context: vscode.ExtensionContext) {
 
     vscode.commands.registerCommand('gemstone.refreshBrowser', () => {
       browserTreeProvider.refresh();
+      symbolProvider.invalidateCache();
     }),
 
     vscode.commands.registerCommand('gemstone.newClass', (node?: BrowserNode) => {
@@ -334,7 +438,7 @@ export function activate(context: vscode.ExtensionContext) {
       const uri = vscode.Uri.parse(
         `gemstone://${session.id}/${encodeURIComponent(dictName)}/new-class`
       );
-      vscode.commands.executeCommand('vscode.open', uri);
+      vscode.commands.executeCommand('gemstone.openDocument', uri);
     }),
 
     vscode.commands.registerCommand('gemstone.newMethod', async (node?: BrowserNode) => {
@@ -384,7 +488,7 @@ export function activate(context: vscode.ExtensionContext) {
         uriStr += `?env=${environmentId}`;
       }
       const uri = vscode.Uri.parse(uriStr);
-      vscode.commands.executeCommand('vscode.open', uri);
+      vscode.commands.executeCommand('gemstone.openDocument', uri);
     }),
 
     vscode.commands.registerCommand('gemstone.deleteMethod', async (node?: BrowserNode) => {
@@ -576,6 +680,194 @@ export function activate(context: vscode.ExtensionContext) {
 
     vscode.commands.registerCommand('gemstone.clearInspector', () => {
       inspectorProvider.clearAll();
+    }),
+
+    vscode.commands.registerCommand('gemstone.searchMethods', async () => {
+      const session = await sessionManager.resolveSession();
+      if (!session) return;
+
+      const term = await vscode.window.showInputBox({
+        prompt: 'Search method source code',
+        placeHolder: 'Enter search term',
+      });
+      if (!term) return;
+
+      let results: queries.MethodSearchResult[];
+      try {
+        results = await vscode.window.withProgress(
+          {
+            location: vscode.ProgressLocation.Notification,
+            title: `Searching methods for "${term}"...`,
+            cancellable: false,
+          },
+          () => Promise.resolve(queries.searchMethodSource(session, term, true)),
+        );
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        vscode.window.showErrorMessage(`Search failed: ${msg}`);
+        return;
+      }
+
+      await showMethodResults(session, results, `Methods containing "${term}"`);
+    }),
+
+    vscode.commands.registerCommand('gemstone.sendersOf', async (node?: BrowserNode) => {
+      const session = await sessionManager.resolveSession();
+      if (!session) return;
+
+      const selector = await resolveSelector(node);
+      if (!selector) return;
+
+      const envId = (node && node.kind === 'method') ? node.environmentId : 0;
+      const maxEnv = (!node && vscode.workspace.getConfiguration('gemstone').get<number>('maxEnvironment', 0) > 0)
+        ? vscode.workspace.getConfiguration('gemstone').get<number>('maxEnvironment', 0)
+        : envId;
+
+      let results: queries.MethodSearchResult[];
+      try {
+        results = await vscode.window.withProgress(
+          {
+            location: vscode.ProgressLocation.Notification,
+            title: `Finding senders of #${selector}...`,
+            cancellable: false,
+          },
+          () => {
+            const all: queries.MethodSearchResult[] = [];
+            for (let env = (node ? envId : 0); env <= maxEnv; env++) {
+              all.push(...queries.sendersOf(session, selector, env));
+            }
+            // Deduplicate by class+meta+selector
+            const seen = new Set<string>();
+            return Promise.resolve(all.filter(r => {
+              const key = `${r.className}|${r.isMeta}|${r.selector}`;
+              if (seen.has(key)) return false;
+              seen.add(key);
+              return true;
+            }));
+          },
+        );
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        vscode.window.showErrorMessage(`Senders search failed: ${msg}`);
+        return;
+      }
+
+      await showMethodResults(session, results, `Senders of #${selector}`);
+    }),
+
+    vscode.commands.registerCommand('gemstone.implementorsOf', async (node?: BrowserNode) => {
+      const session = await sessionManager.resolveSession();
+      if (!session) return;
+
+      const selector = await resolveSelector(node);
+      if (!selector) return;
+
+      const envId = (node && node.kind === 'method') ? node.environmentId : 0;
+      const maxEnv = (!node && vscode.workspace.getConfiguration('gemstone').get<number>('maxEnvironment', 0) > 0)
+        ? vscode.workspace.getConfiguration('gemstone').get<number>('maxEnvironment', 0)
+        : envId;
+
+      let results: queries.MethodSearchResult[];
+      try {
+        results = await vscode.window.withProgress(
+          {
+            location: vscode.ProgressLocation.Notification,
+            title: `Finding implementors of #${selector}...`,
+            cancellable: false,
+          },
+          () => {
+            const all: queries.MethodSearchResult[] = [];
+            for (let env = (node ? envId : 0); env <= maxEnv; env++) {
+              all.push(...queries.implementorsOf(session, selector, env));
+            }
+            const seen = new Set<string>();
+            return Promise.resolve(all.filter(r => {
+              const key = `${r.className}|${r.isMeta}|${r.selector}`;
+              if (seen.has(key)) return false;
+              seen.add(key);
+              return true;
+            }));
+          },
+        );
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        vscode.window.showErrorMessage(`Implementors search failed: ${msg}`);
+        return;
+      }
+
+      await showMethodResults(session, results, `Implementors of #${selector}`);
+    }),
+
+    vscode.commands.registerCommand('gemstone.classHierarchy', async (node?: BrowserNode) => {
+      const session = await sessionManager.resolveSession();
+      if (!session) return;
+
+      let className: string | undefined;
+      if (node && node.kind === 'class') {
+        className = node.name;
+      } else {
+        className = await vscode.window.showInputBox({
+          prompt: 'Enter class name',
+          placeHolder: 'e.g. Array',
+        });
+      }
+      if (!className) return;
+
+      let results: queries.ClassHierarchyEntry[];
+      try {
+        results = await vscode.window.withProgress(
+          {
+            location: vscode.ProgressLocation.Notification,
+            title: `Fetching hierarchy for ${className}...`,
+            cancellable: false,
+          },
+          () => Promise.resolve(queries.getClassHierarchy(session, className!)),
+        );
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        vscode.window.showErrorMessage(`Hierarchy query failed: ${msg}`);
+        return;
+      }
+
+      if (results.length === 0) {
+        vscode.window.showInformationMessage(`No hierarchy found for ${className}.`);
+        return;
+      }
+
+      const superCount = results.filter(r => r.kind === 'superclass').length;
+
+      const items = results.map(r => {
+        let indent: string;
+        if (r.kind === 'superclass') {
+          const idx = results.indexOf(r);
+          indent = '  '.repeat(idx);
+        } else if (r.kind === 'self') {
+          indent = '  '.repeat(superCount);
+        } else {
+          indent = '  '.repeat(superCount + 1);
+        }
+        const marker = r.kind === 'self' ? ' \u25C0' : '';
+        return {
+          label: `${indent}${r.className}${marker}`,
+          description: r.dictName,
+          detail: r.kind === 'self' ? '(target class)' : undefined,
+          entry: r,
+        };
+      });
+
+      const picked = await vscode.window.showQuickPick(items, {
+        placeHolder: `Hierarchy for ${className}`,
+        matchOnDescription: true,
+      });
+      if (!picked) return;
+
+      const uri = vscode.Uri.parse(
+        `gemstone://${session.id}` +
+        `/${encodeURIComponent(picked.entry.dictName)}` +
+        `/${encodeURIComponent(picked.entry.className)}` +
+        `/definition`
+      );
+      vscode.commands.executeCommand('gemstone.openDocument', uri);
     }),
   );
 }

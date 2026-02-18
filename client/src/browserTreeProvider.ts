@@ -101,6 +101,54 @@ function getMaxEnvironment(): number {
   return vscode.workspace.getConfiguration('gemstone').get<number>('maxEnvironment', 0);
 }
 
+/** Deterministic ID for tree item identity (uses dictName, not dictIndex). */
+function nodeId(node: BrowserNode): string {
+  switch (node.kind) {
+    case 'dictionary':
+      return `dict/${node.sessionId}/${node.name}`;
+    case 'classCategory':
+      return `classcat/${node.sessionId}/${node.dictName}/${node.name}`;
+    case 'class':
+      return `class/${node.sessionId}/${node.dictName}/${node.name}`;
+    case 'definition':
+      return `def/${node.sessionId}/${node.dictName}/${node.className}`;
+    case 'comment':
+      return `comment/${node.sessionId}/${node.dictName}/${node.className}`;
+    case 'side':
+      return `side/${node.sessionId}/${node.dictName}/${node.className}/${node.isMeta ? 1 : 0}/${node.environmentId}`;
+    case 'category':
+      return `mcat/${node.sessionId}/${node.dictName}/${node.className}/${node.isMeta ? 1 : 0}/${node.environmentId}/${node.name}`;
+    case 'method':
+      return `method/${node.sessionId}/${node.dictName}/${node.className}/${node.isMeta ? 1 : 0}/${node.environmentId}/${node.category}/${node.selector}`;
+    case 'global':
+      return `global/${node.sessionId}/${node.dictName}/${node.name}`;
+  }
+}
+
+/** Short segment for a node, unique among siblings. Used to build path-based IDs. */
+function nodeSegment(node: BrowserNode): string {
+  switch (node.kind) {
+    case 'dictionary':
+      return `d:${node.sessionId}:${node.name}`;
+    case 'classCategory':
+      return `cc:${node.name}`;
+    case 'class':
+      return `c:${node.name}`;
+    case 'definition':
+      return 'def';
+    case 'comment':
+      return 'com';
+    case 'side':
+      return `s:${node.isMeta ? 1 : 0}:${node.environmentId}`;
+    case 'category':
+      return `cat:${node.name}`;
+    case 'method':
+      return `m:${node.selector}`;
+    case 'global':
+      return `g:${node.name}`;
+  }
+}
+
 // ── TreeItem mapping ────────────────────────────────────────
 
 function toTreeItem(node: BrowserNode): vscode.TreeItem {
@@ -134,7 +182,7 @@ function toTreeItem(node: BrowserNode): vscode.TreeItem {
         `/definition`
       );
       item.command = {
-        command: 'vscode.open',
+        command: 'gemstone.openDocument',
         title: 'Open Class Definition',
         arguments: [uri],
       };
@@ -152,7 +200,7 @@ function toTreeItem(node: BrowserNode): vscode.TreeItem {
         `/comment`
       );
       item.command = {
-        command: 'vscode.open',
+        command: 'gemstone.openDocument',
         title: 'Open Class Comment',
         arguments: [uri],
       };
@@ -191,7 +239,7 @@ function toTreeItem(node: BrowserNode): vscode.TreeItem {
       }
       const uri = vscode.Uri.parse(uriStr);
       item.command = {
-        command: 'vscode.open',
+        command: 'gemstone.openDocument',
         title: 'Open Method',
         arguments: [uri],
       };
@@ -233,6 +281,7 @@ export class BrowserTreeProvider implements vscode.TreeDataProvider<BrowserNode>
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
   private envCache = new Map<string, EnvCacheEntry>();
   private classCategoryCache = new Map<string, ClassCategoryCacheEntry>();
+  private pathIds = new Map<BrowserNode, string>();
 
   constructor(private sessionManager: SessionManager) {
     sessionManager.onDidChangeSelection(() => this.refresh());
@@ -241,11 +290,165 @@ export class BrowserTreeProvider implements vscode.TreeDataProvider<BrowserNode>
   refresh(): void {
     this.envCache.clear();
     this.classCategoryCache.clear();
+    this.pathIds.clear();
     this._onDidChangeTreeData.fire(undefined);
   }
 
+  getParent(element: BrowserNode): BrowserNode | null {
+    let parent: BrowserNode | null;
+    switch (element.kind) {
+      case 'dictionary':
+        return null;
+      case 'classCategory':
+        parent = {
+          kind: 'dictionary',
+          sessionId: element.sessionId,
+          dictIndex: element.dictIndex,
+          name: element.dictName,
+        };
+        break;
+      case 'class':
+        parent = {
+          kind: 'classCategory',
+          sessionId: element.sessionId,
+          dictIndex: element.dictIndex,
+          dictName: element.dictName,
+          name: '** ALL **',
+        };
+        break;
+      case 'definition':
+      case 'comment':
+        parent = {
+          kind: 'class',
+          sessionId: element.sessionId,
+          dictIndex: element.dictIndex,
+          dictName: element.dictName,
+          name: element.className,
+        };
+        break;
+      case 'side':
+        parent = {
+          kind: 'class',
+          sessionId: element.sessionId,
+          dictIndex: element.dictIndex,
+          dictName: element.dictName,
+          name: element.className,
+        };
+        break;
+      case 'category':
+        parent = {
+          kind: 'side',
+          sessionId: element.sessionId,
+          dictIndex: element.dictIndex,
+          dictName: element.dictName,
+          className: element.className,
+          isMeta: element.isMeta,
+          environmentId: element.environmentId,
+        };
+        break;
+      case 'method':
+        parent = {
+          kind: 'category',
+          sessionId: element.sessionId,
+          dictIndex: element.dictIndex,
+          dictName: element.dictName,
+          className: element.className,
+          isMeta: element.isMeta,
+          environmentId: element.environmentId,
+          name: element.category,
+        };
+        break;
+      case 'global':
+        parent = {
+          kind: 'classCategory',
+          sessionId: element.sessionId,
+          dictIndex: element.dictIndex,
+          dictName: element.dictName,
+          name: '** OTHER GLOBALS **',
+        };
+        break;
+    }
+
+    // Derive parent's path ID by stripping the last segment from the child's path
+    const childPath = this.pathIds.get(element);
+    if (childPath && parent) {
+      const lastSlash = childPath.lastIndexOf('/');
+      if (lastSlash >= 0) {
+        this.pathIds.set(parent, childPath.substring(0, lastSlash));
+      }
+    }
+
+    return parent;
+  }
+
+  /** Construct the leaf BrowserNode for a gemstone:// URI, with path ID for reveal(). */
+  nodeForUri(uri: vscode.Uri): BrowserNode | null {
+    if (uri.scheme !== 'gemstone') return null;
+
+    const sessionId = parseInt(uri.authority, 10);
+    if (isNaN(sessionId)) return null;
+
+    const parts = uri.path.split('/').map(decodeURIComponent);
+    // parts[0] = '' (leading slash)
+    // parts[1] = dictName
+    // parts[2] = className
+    // parts[3] = side | 'definition' | 'comment' | 'new-class'
+    // parts[4] = category
+    // parts[5] = selector | 'new-method'
+    if (parts.length < 3) return null;
+
+    const dictName = parts[1];
+    const className = parts[2];
+    if (className === 'new-class') return null;
+
+    // Path through "** ALL **" class category (reliable for any class)
+    const classPrefix =
+      `d:${sessionId}:${dictName}/cc:** ALL **/c:${className}`;
+
+    if (parts.length === 4) {
+      if (parts[3] === 'definition') {
+        const node: BrowserNode = { kind: 'definition', sessionId, dictIndex: 0, dictName, className };
+        this.pathIds.set(node, `${classPrefix}/def`);
+        return node;
+      }
+      if (parts[3] === 'comment') {
+        const node: BrowserNode = { kind: 'comment', sessionId, dictIndex: 0, dictName, className };
+        this.pathIds.set(node, `${classPrefix}/com`);
+        return node;
+      }
+      return null;
+    }
+
+    if (parts.length === 6) {
+      if (parts[5] === 'new-method') return null;
+      const isMeta = parts[3] === 'class';
+      const category = parts[4];
+      const selector = parts[5];
+      const envParam = new URLSearchParams(uri.query).get('env');
+      const environmentId = envParam ? parseInt(envParam, 10) : 0;
+      const node: BrowserNode = {
+        kind: 'method',
+        sessionId,
+        dictIndex: 0,
+        dictName,
+        className,
+        isMeta,
+        environmentId,
+        category,
+        selector,
+      };
+      this.pathIds.set(node,
+        `${classPrefix}/s:${isMeta ? 1 : 0}:${environmentId}/cat:${category}/m:${selector}`);
+      return node;
+    }
+
+    return null;
+  }
+
   getTreeItem(element: BrowserNode): vscode.TreeItem {
-    return toTreeItem(element);
+    const item = toTreeItem(element);
+    item.id = this.pathIds.get(element) ?? nodeId(element);
+    return item;
   }
 
   async getChildren(element?: BrowserNode): Promise<BrowserNode[]> {
@@ -253,26 +456,43 @@ export class BrowserTreeProvider implements vscode.TreeDataProvider<BrowserNode>
     if (!session) return [];
 
     try {
+      let children: BrowserNode[];
       if (!element) {
-        return this.getDictionaries(session);
+        children = this.getDictionaries(session);
+      } else {
+        switch (element.kind) {
+          case 'dictionary':
+            children = this.getClassCategories(session, element);
+            break;
+          case 'classCategory':
+            children = this.getClassesInCategory(element);
+            break;
+          case 'class':
+            children = this.getSides(element);
+            break;
+          case 'side':
+            children = this.getCategories(session, element);
+            break;
+          case 'category':
+            children = this.getMethods(session, element);
+            break;
+          case 'definition':
+          case 'comment':
+          case 'method':
+          case 'global':
+            children = [];
+            break;
+        }
       }
-      switch (element.kind) {
-        case 'dictionary':
-          return this.getClassCategories(session, element);
-        case 'classCategory':
-          return this.getClassesInCategory(element);
-        case 'class':
-          return this.getSides(element);
-        case 'side':
-          return this.getCategories(session, element);
-        case 'category':
-          return this.getMethods(session, element);
-        case 'definition':
-        case 'comment':
-        case 'method':
-        case 'global':
-          return [];
+
+      // Compute path-based IDs for all children
+      const parentPath = element ? this.pathIds.get(element) : undefined;
+      for (const child of children) {
+        const seg = nodeSegment(child);
+        this.pathIds.set(child, parentPath ? `${parentPath}/${seg}` : seg);
       }
+
+      return children;
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       vscode.window.showErrorMessage(`Browser query failed: ${msg}`);
